@@ -1,0 +1,135 @@
+---
+title: "Info about the R-Ladies chapters"
+output: 
+  html_document
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE}
+library(rvest)
+library(dplyr)
+```
+
+
+```{r}
+# read the page where the list of chapters is located
+page <- read_html("https://github.com/rladies/starter-kit/blob/master/Current-Chapters.md")
+```
+
+## Get the cities of the chapters
+
+```{r}
+# get the cities of the chapters ----------------------------
+cities <- page %>%
+  html_nodes("#readme strong") %>% 
+  html_text() %>% 
+  tbl_df()
+  
+cities_plus_dc <- page %>%
+  html_nodes("h3:nth-child(150) , #readme strong") %>% 
+  html_text() 
+
+cities_plus_dc_df <- page %>%
+  html_nodes("h3:nth-child(150) , #readme strong") %>% 
+  html_text() %>% 
+  tbl_df()
+
+# get the countries of the chapters ----------------------------
+countries <- page %>% 
+  html_nodes("ul+ h2 , p+ h2") %>% 
+  html_text()
+# %>% 
+#   gsub("[\r\n]", "", .)     # remove line break
+
+# NEED TO LOOK!  
+# country_city <- page %>%
+#   html_nodes("ul+ h2 , #readme strong , p+ h2") %>% 
+#   html_text() %>% 
+#   gsub("[\r\n]", "", .)
+
+```
+
+
+# Info about the meetups
+
+```{r}
+# website   
+meetup_website <- page %>% 
+  html_nodes("#readme li:nth-child(1)") %>% 
+  html_text() %>% 
+  sub("meetup: ", "", ., fixed = TRUE) 
+  
+meetup_page <- meetup_website[grep(pattern = "https://www.meetup", x = meetup_website ,fixed=TRUE)]
+
+# number of members
+# go to each meetup page and get the number of members
+number_members <- NULL
+for (i in seq_along(meetup_page)) {
+  n_members <- read_html(meetup_page[i]) %>% 
+  html_nodes(".wrapNice+ .align-right") %>% 
+  html_text() 
+  number_members <- c(number_members, n_members)
+}
+sum(as.numeric(number_members))
+
+# number of events
+
+### NEED TO WORK ON THAT!
+
+# number_events <- NULL
+# for (i in seq_along(meetup_page)) {
+#   print(meetup_page[i])
+#   n_events <- read_html(meetup_page[i]) %>% 
+#     html_nodes(".line:nth-child(4) span") %>% 
+#     html_text() 
+#   number_events <- c(number_events, n_events)
+# }
+
+
+join <- bind_cols(tbl_df(cities_plus_dc), 
+                  tbl_df(meetup_website))
+names(join) <- c("city", "meetup_page")
+
+```
+
+
+# Map of the R-Ladies chapters 
+
+```{r, warning=FALSE, message=FALSE}
+# library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(leaflet)
+library(purrr)
+```
+
+
+```{r,message=FALSE}
+#world <- map_data("world")
+lon_lat <- sapply(cities_plus_dc, geocode)
+df <- as.data.frame(lon_lat)
+
+dd  <- data.frame(name = colnames(df),
+                  matrix(unlist(df), ncol = 2,byrow = TRUE),
+                  stringsAsFactors=FALSE)
+names(dd) <- c("name","lon","lat")
+
+Rlogo <- makeIcon(
+  iconUrl = "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4NCjwhLS0gR2VuZXJhdG9yOiBBZG9iZSBJbGx1c3RyYXRvciAxOS4yLjEsIFNWRyBFeHBvcnQgUGx1Zy1JbiAuIFNWRyBWZXJzaW9uOiA2LjAwIEJ1aWxkIDApICAtLT4NCjxzdmcgdmVyc2lvbj0iMS4xIiBpZD0iTGF5ZXJfMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeD0iMHB4IiB5PSIwcHgiDQoJIHZpZXdCb3g9IjAgMCA0MDAgNDAwIiBzdHlsZT0iZW5hYmxlLWJhY2tncm91bmQ6bmV3IDAgMCA0MDAgNDAwOyIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSI+DQo8c3R5bGUgdHlwZT0idGV4dC9jc3MiPg0KCS5zdDB7ZmlsbDp1cmwoI1NWR0lEXzFfKTt9DQoJLnN0MXtmaWxsOnVybCgjU1ZHSURfMl8pO30NCjwvc3R5bGU+DQo8bGluZWFyR3JhZGllbnQgaWQ9IlNWR0lEXzFfIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9Ii00MzguMzQzNSIgeTE9IjYwMC40NTA2IiB4Mj0iLTQzNy44ODY2IiB5Mj0iNTk5Ljk5MzciIGdyYWRpZW50VHJhbnNmb3JtPSJtYXRyaXgoNzIxLjA5NCAwIDAgLTQ4Mi45MzcgMzE2MTIyLjE1NjMgMjkwMDQ5LjE1NjMpIj4NCgk8c3RvcCAgb2Zmc2V0PSIwIiBzdHlsZT0ic3RvcC1jb2xvcjojQ0FDRENGIi8+DQoJPHN0b3AgIG9mZnNldD0iMSIgc3R5bGU9InN0b3AtY29sb3I6IzgzODM4QiIvPg0KPC9saW5lYXJHcmFkaWVudD4NCjxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0yMDAuMSwyOTAuOGMtOTAuMywwLTE2My41LTQ5LjgtMTYzLjUtMTExLjJjMC02MS40LDczLjItMTExLjIsMTYzLjUtMTExLjJjOTAuMywwLDE2My41LDQ5LjgsMTYzLjUsMTExLjINCglDMzYzLjUsMjQxLjEsMjkwLjMsMjkwLjgsMjAwLjEsMjkwLjh6IE0yMjUuMSwxMTEuOWMtNjguNiwwLTEyNC4zLDM0LTEyNC4zLDc2czU1LjYsNzYsMTI0LjMsNzZjNjguNiwwLDExOS4zLTIzLjMsMTE5LjMtNzYNCglDMzQ0LjMsMTM1LjIsMjkzLjcsMTExLjksMjI1LjEsMTExLjl6Ii8+DQo8bGluZWFyR3JhZGllbnQgaWQ9IlNWR0lEXzJfIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9IjE2NC4yMTM5IiB5MT0iMjM1LjE4NDUiIHgyPSIzNDQuNDMxOSIgeTI9IjIzNS4xODQ1Ij4NCgk8c3RvcCAgb2Zmc2V0PSIwIiBzdHlsZT0ic3RvcC1jb2xvcjojODgzOThBIi8+DQoJPHN0b3AgIG9mZnNldD0iMC4xNjUyIiBzdHlsZT0ic3RvcC1jb2xvcjojODQzNzg2Ii8+DQoJPHN0b3AgIG9mZnNldD0iMC4zMzY1IiBzdHlsZT0ic3RvcC1jb2xvcjojNzgzMjc5Ii8+DQoJPHN0b3AgIG9mZnNldD0iMC41MTA1IiBzdHlsZT0ic3RvcC1jb2xvcjojNjMyQTY1Ii8+DQoJPHN0b3AgIG9mZnNldD0iMC42ODY0IiBzdHlsZT0ic3RvcC1jb2xvcjojNDcxRTQ4Ii8+DQoJPHN0b3AgIG9mZnNldD0iMC44NjIxIiBzdHlsZT0ic3RvcC1jb2xvcjojMjIwRTIzIi8+DQoJPHN0b3AgIG9mZnNldD0iMSIgc3R5bGU9InN0b3AtY29sb3I6IzAwMDAwMCIvPg0KPC9saW5lYXJHcmFkaWVudD4NCjxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik0zMDEuOSwyNTYuNmMtMi41LTIuNy01LjktNC43LTcuOS01LjdjLTUuNy0yLjktMTUuNi02LTE1LjYtNlMzMjcsMjQxLjIsMzI3LDE5MnMtNTAuOS01MC4xLTUwLjktNTAuMUgxNjQuMg0KCXYxODYuN2w1NS43LDBsMC03My4xYzAsMCwxMi44LDAsMTUsMGMzLjEsMCw0LjQsMC45LDcuNSwzLjRjMy43LDMsOS43LDEzLjYsOS43LDEzLjZsMjkuNCw1Ni4xbDYyLjksMGwtMzguOS02Ni43DQoJQzMwNS41LDI2MS45LDMwNC4zLDI1OS4yLDMwMS45LDI1Ni42eiBNMjU0LjEsMjE0bC0zMy43LDBsMC0zMS43bDMzLjcsMGMwLDAsMTUuNi0wLjksMTUuNiwxNS42QzI2OS43LDIxNCwyNTQuMSwyMTQsMjU0LjEsMjE0eiIvPg0KPC9zdmc+DQo=", iconWidth = 20, iconHeight = 20)
+
+rladies_map <- leaflet(data = dd) %>%
+  addTiles() %>% 
+  addMarkers(~lon, ~lat, 
+             icon = Rlogo, 
+             popup = ~as.character(name))
+rladies_map
+
+```
+
